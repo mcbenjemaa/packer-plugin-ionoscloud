@@ -9,13 +9,13 @@ import (
 
 	"github.com/hashicorp/packer-plugin-sdk/plugin"
 
-	"github.com/hashicorp/packer-plugin-profitbricks/builder/profitbricks"
+	"github.com/hashicorp/packer-plugin-profitbricks/builder/ionoscloud"
 	"github.com/hashicorp/packer-plugin-profitbricks/version"
 )
 
 func main() {
 	pps := plugin.NewSet()
-	pps.RegisterBuilder(plugin.DEFAULT_NAME, new(profitbricks.Builder))
+	pps.RegisterBuilder(plugin.DEFAULT_NAME, new(ionoscloud.Builder))
 	pps.SetVersion(version.PluginVersion)
 	err := pps.Run()
 	if err != nil {

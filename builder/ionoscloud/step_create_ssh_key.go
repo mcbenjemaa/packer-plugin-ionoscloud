@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package profitbricks
+package ionoscloud
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func (s *StepCreateSSHKey) Run(ctx context.Context, state multistep.StateBag) mu
 
 		pub, err := ssh.NewPublicKey(&priv.PublicKey)
 		if err != nil {
-			err := fmt.Errorf("Error creating temporary ssh key: %s", err)
+			err := fmt.Errorf("error creating temporary ssh key: %s", err)
 			state.Put("error", err)
 			ui.Error(err.Error())
 			return multistep.ActionHalt

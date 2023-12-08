@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package profitbricks
+package ionoscloud
 
 import (
 	"context"
@@ -13,18 +13,25 @@ import (
 
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
-	"github.com/profitbricks/profitbricks-sdk-go"
+
+	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 )
 
-type stepTakeSnapshot struct{}
+type stepTakeSnapshot struct {
+	client *ionoscloud.APIClient
+}
+
+func newStepTakeSnapshot(client *ionoscloud.APIClient) *stepTakeSnapshot {
+	return &stepTakeSnapshot{
+		client: client,
+	}
+}
 
 func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packersdk.Ui)
 	c := state.Get("config").(*Config)
 
 	ui.Say("Creating ProfitBricks snapshot...")
-
-	profitbricks.SetAuth(c.PBUsername, c.PBPassword)
 
 	dcId := state.Get("datacenter_id").(string)
 	volumeId := state.Get("volume_id").(string)
@@ -37,7 +44,7 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 	}
 
 	/* sync fs changes from the provisioning step */
-	os, err := s.getOs(dcId, serverId)
+	os, err := s.getOs(ctx, dcId, serverId)
 	if err != nil {
 		ui.Error(fmt.Sprintf("an error occurred while getting the server os: %s", err.Error()))
 		return multistep.ActionHalt
@@ -53,33 +60,39 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 		}
 	}
 
-	snapshot := profitbricks.CreateSnapshot(dcId, volumeId, c.SnapshotName, "")
-	state.Put("snapshotname", c.SnapshotName)
-
-	if snapshot.StatusCode > 299 {
+	snapshot, resp, err := s.client.VolumesApi.DatacentersVolumesCreateSnapshotPost(ctx, dcId, volumeId).Execute()
+	if err != nil {
+		ui.Error(fmt.Sprintf("An error occurred while creating a snapshot: %s", err.Error()))
+		return multistep.ActionHalt
+	}
+	if resp.StatusCode > 299 {
 		var restError RestError
-		if err := json.Unmarshal([]byte(snapshot.Response), &restError); err != nil {
+		if err := json.Unmarshal([]byte(resp.Message), &restError); err != nil {
 			ui.Error(err.Error())
 			return multistep.ActionHalt
 		}
 		if len(restError.Messages) > 0 {
 			ui.Error(restError.Messages[0].Message)
 		} else {
-			ui.Error(snapshot.Response)
+			ui.Error(resp.Message)
 		}
 
 		return multistep.ActionHalt
 	}
 
+	//snapshot := profitbricks.CreateSnapshot(dcId, volumeId, c.SnapshotName, "")\
+
+	state.Put("snapshotname", c.SnapshotName)
+
 	ui.Say(fmt.Sprintf("Creating a snapshot for %s/volumes/%s", dcId, volumeId))
 
-	err = s.waitForRequest(snapshot.Headers.Get("Location"), *c, ui)
+	err = s.waitForRequest(ctx, resp.Header.Get("Location"), *c, ui)
 	if err != nil {
 		ui.Error(fmt.Sprintf("An error occurred while waiting for the request to be done: %s", err.Error()))
 		return multistep.ActionHalt
 	}
 
-	err = s.waitTillSnapshotAvailable(snapshot.Id, *c, ui)
+	err = s.waitTillSnapshotAvailable(ctx, *snapshot.Id, *c, ui)
 	if err != nil {
 		ui.Error(fmt.Sprintf("An error occurred while waiting for the snapshot to be created: %s", err.Error()))
 		return multistep.ActionHalt
@@ -91,10 +104,8 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 func (s *stepTakeSnapshot) Cleanup(_ multistep.StateBag) {
 }
 
-func (s *stepTakeSnapshot) waitForRequest(path string, config Config, ui packersdk.Ui) error {
-
+func (s *stepTakeSnapshot) waitForRequest(ctx context.Context, path string, config Config, ui packersdk.Ui) error {
 	ui.Say(fmt.Sprintf("Watching request %s", path))
-	s.setPB(config.PBUsername, config.PBPassword, config.PBUrl)
 	waitCount := 50
 	var waitInterval = 10 * time.Second
 	if config.Retries > 0 {
@@ -102,14 +113,17 @@ func (s *stepTakeSnapshot) waitForRequest(path string, config Config, ui packers
 	}
 	done := false
 	for i := 0; i < waitCount; i++ {
-		request := profitbricks.GetRequestStatus(path)
-		ui.Say(fmt.Sprintf("request status = %s", request.Metadata.Status))
-		if request.Metadata.Status == "DONE" {
+		request, resp, err := s.client.GetRequestStatus(ctx, path)
+		if err != nil {
+			return err
+		}
+		ui.Say(fmt.Sprintf("request status = %s", *request.Metadata.Status))
+		if *request.Metadata.Status == "DONE" {
 			done = true
 			break
 		}
-		if request.Metadata.Status == "FAILED" {
-			return fmt.Errorf("Request failed: %s", request.Response)
+		if *request.Metadata.Status == "FAILED" {
+			return fmt.Errorf("request failed: %s", resp.Message)
 		}
 		time.Sleep(waitInterval)
 		i++
@@ -122,8 +136,7 @@ func (s *stepTakeSnapshot) waitForRequest(path string, config Config, ui packers
 	return nil
 }
 
-func (s *stepTakeSnapshot) waitTillSnapshotAvailable(id string, config Config, ui packersdk.Ui) error {
-	s.setPB(config.PBUsername, config.PBPassword, config.PBUrl)
+func (s *stepTakeSnapshot) waitTillSnapshotAvailable(ctx context.Context, id string, config Config, ui packersdk.Ui) error {
 	waitCount := 50
 	var waitInterval = 10 * time.Second
 	if config.Retries > 0 {
@@ -131,13 +144,17 @@ func (s *stepTakeSnapshot) waitTillSnapshotAvailable(id string, config Config, u
 	}
 	done := false
 	ui.Say(fmt.Sprintf("waiting for snapshot %s to become available", id))
+
 	for i := 0; i < waitCount; i++ {
-		snap := profitbricks.GetSnapshot(id)
-		ui.Say(fmt.Sprintf("snapshot status = %s", snap.Metadata.State))
-		if snap.StatusCode != 200 {
-			return fmt.Errorf("%s", snap.Response)
+		snapshot, resp, err := s.client.SnapshotsApi.SnapshotsFindById(ctx, id).Execute()
+		if err != nil {
+			return err
 		}
-		if snap.Metadata.State == "AVAILABLE" {
+		ui.Say(fmt.Sprintf("snapshot status = %s", *snapshot.Metadata.State))
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("%s", resp.Message)
+		}
+		if *snapshot.Metadata.State == "AVAILABLE" {
 			done = true
 			break
 		}
@@ -168,26 +185,28 @@ func (s *stepTakeSnapshot) syncFs(ctx context.Context, comm packersdk.Communicat
 	return nil
 }
 
-func (s *stepTakeSnapshot) getOs(dcId string, serverId string) (string, error) {
-	server := profitbricks.GetServer(dcId, serverId)
-	if server.StatusCode != 200 {
-		return "", errors.New(server.Response)
+func (s *stepTakeSnapshot) getOs(ctx context.Context, dcId string, serverId string) (string, error) {
+
+	server, resp, err := s.client.ServersApi.DatacentersServersFindById(ctx, dcId, serverId).Execute()
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != 200 {
+		return "", errors.New(resp.Message)
 	}
 
 	if server.Properties.BootVolume == nil {
 		return "", errors.New("no boot volume found on server")
 	}
 
-	volumeId := server.Properties.BootVolume.Id
-	volume := profitbricks.GetVolume(dcId, volumeId)
-	if volume.StatusCode != 200 {
-		return "", errors.New(volume.Response)
+	volumeId := *server.Properties.BootVolume.Id
+	volume, resp, err := s.client.VolumesApi.DatacentersVolumesFindById(ctx, dcId, volumeId).Execute()
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != 200 {
+		return "", errors.New(resp.Message)
 	}
 
-	return volume.Properties.LicenceType, nil
-}
-
-func (s *stepTakeSnapshot) setPB(username string, password string, url string) {
-	profitbricks.SetAuth(username, password)
-	profitbricks.SetEndpoint(url)
+	return *volume.Properties.LicenceType, nil
 }

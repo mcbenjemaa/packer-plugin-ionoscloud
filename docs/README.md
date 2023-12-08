@@ -8,7 +8,7 @@ To install this plugin, copy and paste this code into your Packer configuration,
 packer {
   required_plugins {
     profitbricks = {
-      source  = "github.com/hashicorp/profitbricks"
+      source  = "github.com/hashicorp/ionoscloud"
       version = "~> 1"
     }
   }
@@ -18,7 +18,7 @@ packer {
 Alternatively, you can use `packer plugins install` to manage installation of this plugin.
 
 ```sh
-$ packer plugins install github.com/hashicorp/profitbricks
+$ packer plugins install github.com/hashicorp/ionoscloud
 ```
 
 ## Components

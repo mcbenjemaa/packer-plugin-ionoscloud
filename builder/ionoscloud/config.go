@@ -3,7 +3,7 @@
 
 //go:generate packer-sdc mapstructure-to-hcl2 -type Config
 
-package profitbricks
+package ionoscloud
 
 import (
 	"errors"
@@ -21,18 +21,18 @@ type Config struct {
 	common.PackerConfig `mapstructure:",squash"`
 	Comm                communicator.Config `mapstructure:",squash"`
 
-	PBUsername string `mapstructure:"username"`
-	PBPassword string `mapstructure:"password"`
-	PBUrl      string `mapstructure:"url"`
+	IonosUsername string `mapstructure:"username"`
+	IonosPassword string `mapstructure:"password"`
+	IonosApiUrl   string `mapstructure:"url"`
 
-	Region       string `mapstructure:"location"`
-	Image        string `mapstructure:"image"`
-	SnapshotName string `mapstructure:"snapshot_name"`
-	DiskSize     int    `mapstructure:"disk_size"`
-	DiskType     string `mapstructure:"disk_type"`
-	Cores        int    `mapstructure:"cores"`
-	Ram          int    `mapstructure:"ram"`
-	Retries      int    `mapstructure:"retries"`
+	Region       string  `mapstructure:"location"`
+	Image        string  `mapstructure:"image"`
+	SnapshotName string  `mapstructure:"snapshot_name"`
+	DiskSize     float32 `mapstructure:"disk_size"`
+	DiskType     string  `mapstructure:"disk_type"`
+	Cores        int32   `mapstructure:"cores"`
+	Ram          int32   `mapstructure:"ram"`
+	Retries      int     `mapstructure:"retries"`
 	ctx          interpolate.Context
 }
 
@@ -70,16 +70,16 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 		c.SnapshotName = def
 	}
 
-	if c.PBUsername == "" {
-		c.PBUsername = os.Getenv("PROFITBRICKS_USERNAME")
+	if c.IonosUsername == "" {
+		c.IonosUsername = os.Getenv("IONOS_USERNAME")
 	}
 
-	if c.PBPassword == "" {
-		c.PBPassword = os.Getenv("PROFITBRICKS_PASSWORD")
+	if c.IonosPassword == "" {
+		c.IonosPassword = os.Getenv("IONOS_PASSWORD")
 	}
 
-	if c.PBUrl == "" {
-		c.PBUrl = "https://api.profitbricks.com/cloudapi/v4"
+	if c.IonosApiUrl == "" {
+		c.IonosApiUrl = "https://api.ionos.com"
 	}
 
 	if c.Cores == 0 {
@@ -111,12 +111,12 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 			errs, errors.New("ProfitBricks 'image' is required"))
 	}
 
-	if c.PBUsername == "" {
+	if c.IonosUsername == "" {
 		errs = packersdk.MultiErrorAppend(
 			errs, errors.New("ProfitBricks username is required"))
 	}
 
-	if c.PBPassword == "" {
+	if c.IonosPassword == "" {
 		errs = packersdk.MultiErrorAppend(
 			errs, errors.New("ProfitBricks password is required"))
 	}
@@ -124,7 +124,7 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 	if errs != nil && len(errs.Errors) > 0 {
 		return nil, errs
 	}
-	packersdk.LogSecretFilter.Set(c.PBUsername)
+	packersdk.LogSecretFilter.Set(c.IonosUsername)
 
 	return nil, nil
 }

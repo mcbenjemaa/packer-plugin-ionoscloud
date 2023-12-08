@@ -1,5 +1,5 @@
-# Packer Plugin Profitbricks
-The `Profitbricks` multi-component plugin can be used with HashiCorp [Packer](https://www.packer.io)
+# Packer Plugin IONOSCloud
+The `IONOSCloud` multi-component plugin can be used with HashiCorp [Packer](https://www.packer.io)
 to create custom images. For the full list of available features for this plugin see [docs](docs).
 
 ## Installation
@@ -20,7 +20,7 @@ packer {
   required_plugins {
     profitbricks = {
       version = ">= 1.0.1"
-      source  = "github.com/hashicorp/profitbricks"
+      source  = "github.com/mcbenjemaa/ionoscloud"
     }
   }
 }
@@ -40,7 +40,7 @@ To install the plugin, please follow the Packer documentation on
 
 If you prefer to build the plugin from sources, clone the GitHub repository
 locally and run the command `go build` from the root
-directory. Upon successful compilation, a `packer-plugin-profitbricks` plugin
+directory. Upon successful compilation, a `packer-plugin-ionoscloud` plugin
 binary file can be found in the root directory.
 To install the compiled plugin, please follow the official Packer documentation
 on [installing a plugin](https://www.packer.io/docs/extending/plugins/#installing-plugins).

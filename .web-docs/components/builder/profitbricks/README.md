@@ -68,7 +68,7 @@ Here is a basic example:
 **HCL**
 
 ```hcl
-source "profitbricks" "ubuntu" {
+source "ionoscloud" "ubuntu" {
   image             = "Ubuntu-16.04"
   disk_size         = 5
   snapshot_name     = "double"
@@ -78,7 +78,7 @@ source "profitbricks" "ubuntu" {
 }
 
 build {
-  sources = "profitbricks.ubuntu"
+  sources = "ionoscloud.ubuntu"
 }
 ```
 
@@ -89,7 +89,7 @@ build {
   "builders": [
     {
       "image": "Ubuntu-16.04",
-      "type": "profitbricks",
+      "type": "ionoscloud",
       "disk_size": "5",
       "snapshot_name": "double",
       "snapshot_password": "test1234",
