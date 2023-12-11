@@ -5,15 +5,13 @@ package ionoscloud
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
-
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 )
 
@@ -31,7 +29,7 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 	ui := state.Get("ui").(packersdk.Ui)
 	c := state.Get("config").(*Config)
 
-	ui.Say("Creating ProfitBricks snapshot...")
+	ui.Say("Creating IONOS snapshot...")
 
 	dcId := state.Get("datacenter_id").(string)
 	volumeId := state.Get("volume_id").(string)
@@ -60,37 +58,16 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 		}
 	}
 
-	snapshot, resp, err := s.client.VolumesApi.DatacentersVolumesCreateSnapshotPost(ctx, dcId, volumeId).Execute()
+	ui.Say(fmt.Sprintf("Creating a snapshot for %s/volumes/%s", dcId, volumeId))
+	snapshot, err := s.createSnapshot(ctx, dcId, volumeId)
 	if err != nil {
 		ui.Error(fmt.Sprintf("An error occurred while creating a snapshot: %s", err.Error()))
 		return multistep.ActionHalt
 	}
-	if resp.StatusCode > 299 {
-		var restError RestError
-		if err := json.Unmarshal([]byte(resp.Message), &restError); err != nil {
-			ui.Error(err.Error())
-			return multistep.ActionHalt
-		}
-		if len(restError.Messages) > 0 {
-			ui.Error(restError.Messages[0].Message)
-		} else {
-			ui.Error(resp.Message)
-		}
-
-		return multistep.ActionHalt
-	}
-
-	//snapshot := profitbricks.CreateSnapshot(dcId, volumeId, c.SnapshotName, "")\
 
 	state.Put("snapshotname", c.SnapshotName)
 
-	ui.Say(fmt.Sprintf("Creating a snapshot for %s/volumes/%s", dcId, volumeId))
-
-	err = s.waitForRequest(ctx, resp.Header.Get("Location"), *c, ui)
-	if err != nil {
-		ui.Error(fmt.Sprintf("An error occurred while waiting for the request to be done: %s", err.Error()))
-		return multistep.ActionHalt
-	}
+	ui.Say("Waiting until snapshot available snapshot")
 
 	err = s.waitTillSnapshotAvailable(ctx, *snapshot.Id, *c, ui)
 	if err != nil {
@@ -104,71 +81,24 @@ func (s *stepTakeSnapshot) Run(ctx context.Context, state multistep.StateBag) mu
 func (s *stepTakeSnapshot) Cleanup(_ multistep.StateBag) {
 }
 
-func (s *stepTakeSnapshot) waitForRequest(ctx context.Context, path string, config Config, ui packersdk.Ui) error {
-	ui.Say(fmt.Sprintf("Watching request %s", path))
-	waitCount := 50
-	var waitInterval = 10 * time.Second
-	if config.Retries > 0 {
-		waitCount = config.Retries
+func processRequestSnapshot(apiClient *ionoscloud.APIClient, resourceID string) (ionoscloud.ResourceHandler, error) {
+	apiRequest := apiClient.SnapshotsApi.SnapshotsFindById(context.Background(), resourceID)
+	dc, _, err := apiRequest.Execute()
+	if err != nil {
+		return nil, err
 	}
-	done := false
-	for i := 0; i < waitCount; i++ {
-		request, resp, err := s.client.GetRequestStatus(ctx, path)
-		if err != nil {
-			return err
-		}
-		ui.Say(fmt.Sprintf("request status = %s", *request.Metadata.Status))
-		if *request.Metadata.Status == "DONE" {
-			done = true
-			break
-		}
-		if *request.Metadata.Status == "FAILED" {
-			return fmt.Errorf("request failed: %s", resp.Message)
-		}
-		time.Sleep(waitInterval)
-		i++
-	}
-
-	if !done {
-		return fmt.Errorf("request not fulfilled after waiting %d seconds",
-			int64(waitCount)*int64(waitInterval)/int64(time.Second))
-	}
-	return nil
+	return &dc, nil
 }
 
 func (s *stepTakeSnapshot) waitTillSnapshotAvailable(ctx context.Context, id string, config Config, ui packersdk.Ui) error {
-	waitCount := 50
-	var waitInterval = 10 * time.Second
-	if config.Retries > 0 {
-		waitCount = config.Retries
+	available, err := s.client.WaitForState(context.Background(), processRequestSnapshot, id)
+	if err != nil {
+		return err
 	}
-	done := false
-	ui.Say(fmt.Sprintf("waiting for snapshot %s to become available", id))
-
-	for i := 0; i < waitCount; i++ {
-		snapshot, resp, err := s.client.SnapshotsApi.SnapshotsFindById(ctx, id).Execute()
-		if err != nil {
-			return err
-		}
-		ui.Say(fmt.Sprintf("snapshot status = %s", *snapshot.Metadata.State))
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("%s", resp.Message)
-		}
-		if *snapshot.Metadata.State == "AVAILABLE" {
-			done = true
-			break
-		}
-		time.Sleep(waitInterval)
-		i++
-		ui.Say(fmt.Sprintf("... still waiting, %d seconds have passed", int64(waitInterval)*int64(i)))
+	if available == true {
+		// put your code here(for example you can create a k8s nodepool after a cluster is created)
 	}
-
-	if !done {
-		return fmt.Errorf("snapshot not created after waiting %d seconds",
-			int64(waitCount)*int64(waitInterval)/int64(time.Second))
-	}
-
-	ui.Say("snapshot created")
+	ui.Say("snapshot available")
 	return nil
 }
 
@@ -186,7 +116,6 @@ func (s *stepTakeSnapshot) syncFs(ctx context.Context, comm packersdk.Communicat
 }
 
 func (s *stepTakeSnapshot) getOs(ctx context.Context, dcId string, serverId string) (string, error) {
-
 	server, resp, err := s.client.ServersApi.DatacentersServersFindById(ctx, dcId, serverId).Execute()
 	if err != nil {
 		return "", err
@@ -209,4 +138,39 @@ func (s *stepTakeSnapshot) getOs(ctx context.Context, dcId string, serverId stri
 	}
 
 	return *volume.Properties.LicenceType, nil
+}
+
+func (s *stepTakeSnapshot) createSnapshot(ctx context.Context, dcId string, volumeId string) (*ionoscloud.Snapshot, error) {
+	snapshot, apiResponse, err := s.client.VolumesApi.DatacentersVolumesCreateSnapshotPost(ctx, dcId, volumeId).Execute()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error creating snapshot (%w)", err)
+	}
+
+	// gets the Location Header value, where Request ID is stored, to interrogate the request status
+	requestPath := getRequestPath(apiResponse)
+	if requestPath == "" {
+		return nil, fmt.Errorf("error getting location from header for datacenter")
+	}
+
+	// Waits for the snapshot creation to finish. Polls until it receives an answer that
+	// provisioning is successful
+	err = s.waitForRequestToBeDone(ctx, requestPath)
+	if err != nil {
+		return nil, fmt.Errorf("error while waiting for datacenter creation to finish (%w)", err)
+	}
+
+	return &snapshot, nil
+}
+
+// waitForRequestToBeDone - polls until the request is 'Done', or
+// until the context timeout expires
+func (s *stepTakeSnapshot) waitForRequestToBeDone(ctx context.Context, path string) error {
+	// Polls until context timeout expires
+	_, err := s.client.WaitForRequest(ctx, path)
+	if err != nil {
+		return fmt.Errorf("error waiting for status for %s : (%w)", path, err)
+	}
+	log.Printf("resource created for path %s", path)
+	return nil
 }

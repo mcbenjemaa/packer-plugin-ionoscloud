@@ -55,9 +55,14 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 
 	var errs *packersdk.MultiError
 
+	if err := c.Comm.Prepare(&c.ctx); err != nil {
+		errs = packersdk.MultiErrorAppend(
+			errs, err...)
+	}
+
 	if c.Comm.SSHPassword == "" && c.Comm.SSHPrivateKeyFile == "" {
 		errs = packersdk.MultiErrorAppend(
-			errs, errors.New("Either ssh private key path or ssh password must be set."))
+			errs, errors.New("either ssh private key path or ssh password must be set"))
 	}
 
 	if c.SnapshotName == "" {
@@ -108,17 +113,17 @@ func (c *Config) Prepare(raws ...interface{}) ([]string, error) {
 
 	if c.Image == "" {
 		errs = packersdk.MultiErrorAppend(
-			errs, errors.New("ProfitBricks 'image' is required"))
+			errs, errors.New("IONOS 'image' is required"))
 	}
 
 	if c.IonosUsername == "" {
 		errs = packersdk.MultiErrorAppend(
-			errs, errors.New("ProfitBricks username is required"))
+			errs, errors.New("IONOS username is required"))
 	}
 
 	if c.IonosPassword == "" {
 		errs = packersdk.MultiErrorAppend(
-			errs, errors.New("ProfitBricks password is required"))
+			errs, errors.New("IONOS password is required"))
 	}
 
 	if errs != nil && len(errs.Errors) > 0 {

@@ -5,15 +5,14 @@ package ionoscloud
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
-
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 )
 
@@ -37,29 +36,12 @@ func (s *stepCreateServer) Run(ctx context.Context, state multistep.StateBag) mu
 		ui.Error(fmt.Sprintf("Error occurred while getting image %s", err.Error()))
 		return multistep.ActionHalt
 	}
-	alias := ""
-	if img == "" {
-		alias, err = s.getImageAlias(ctx, c.Image, c.Region)
-		if err != nil {
-			ui.Error(fmt.Sprintf("Error occurred while getting image %s", err.Error()))
-			return multistep.ActionHalt
-		}
-	}
-
-	datacenter := ionoscloud.Datacenter{
-		Properties: &ionoscloud.DatacenterProperties{
-			Name:     ionoscloud.PtrString(c.SnapshotName),
-			Location: ionoscloud.PtrString(c.Region),
-		},
-	}
 
 	props := &ionoscloud.VolumeProperties{
-		Type:       ionoscloud.PtrString(c.DiskType),
-		Size:       ionoscloud.PtrFloat32(c.DiskSize),
-		Name:       ionoscloud.PtrString(c.SnapshotName),
-		ImageAlias: ionoscloud.PtrString(alias),
-		Image:      ionoscloud.PtrString(img),
-		SshKeys:    &[]string{string(c.Comm.SSHPublicKey)},
+		Type:  ionoscloud.PtrString(c.DiskType),
+		Size:  ionoscloud.PtrFloat32(c.DiskSize),
+		Name:  ionoscloud.PtrString(c.SnapshotName),
+		Image: ionoscloud.PtrString(img),
 	}
 	nic := ionoscloud.Nic{
 		Properties: &ionoscloud.NicProperties{
@@ -70,7 +52,10 @@ func (s *stepCreateServer) Run(ctx context.Context, state multistep.StateBag) mu
 	if c.Comm.SSHPassword != "" {
 		props.ImagePassword = ionoscloud.PtrString(c.Comm.SSHPassword)
 	}
-	server := ionoscloud.Server{
+	if c.Comm.SSHPublicKey != nil {
+		props.SshKeys = &[]string{string(c.Comm.SSHPublicKey)}
+	}
+	serverReq := ionoscloud.Server{
 		Properties: &ionoscloud.ServerProperties{
 			Name:  ionoscloud.PtrString(c.SnapshotName),
 			Ram:   ionoscloud.PtrInt32(c.Ram),
@@ -93,53 +78,13 @@ func (s *stepCreateServer) Run(ctx context.Context, state multistep.StateBag) mu
 	}
 
 	// create datacenter
-	datacenter, resp, err := s.client.DataCentersApi.DatacentersPost(ctx).Datacenter(datacenter).Execute()
+	dc, err := s.createDcAndWaitUntilDone(ctx, c.SnapshotName, c.Region)
 	if err != nil {
 		ui.Error(fmt.Sprintf("Error occurred while creating a datacenter %s", err.Error()))
 		return multistep.ActionHalt
 	}
-
-	if resp.StatusCode > 299 {
-		if resp.StatusCode > 299 {
-			var restError RestError
-			err := json.Unmarshal([]byte(resp.Message), &restError)
-			if err != nil {
-				ui.Error(fmt.Sprintf("Error decoding json response: %s", err.Error()))
-				return multistep.ActionHalt
-			}
-			if len(restError.Messages) > 0 {
-				ui.Error(restError.Messages[0].Message)
-			} else {
-				ui.Error(resp.Message)
-			}
-			return multistep.ActionHalt
-		}
-	}
-
-	err = s.waitTillProvisioned(ctx, resp.Header.Get("Location"), *c)
-	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a datacenter %s", err.Error()))
-		return multistep.ActionHalt
-	}
-
-	state.Put("datacenter_id", datacenter.Id)
-
-	// create server
-	server, sResp, err := s.client.ServersApi.DatacentersServersPost(ctx, *datacenter.Id).Server(server).Execute()
-	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a server %s", err.Error()))
-		return multistep.ActionHalt
-	}
-	if sResp.StatusCode > 299 {
-		ui.Error(fmt.Sprintf("Error occurred %s", parseErrorMessage(sResp.Message)))
-		return multistep.ActionHalt
-	}
-
-	err = s.waitTillProvisioned(ctx, sResp.Header.Get("Location"), *c)
-	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a server %s", err.Error()))
-		return multistep.ActionHalt
-	}
+	dcId := *dc.Id
+	state.Put("datacenter_id", dcId)
 
 	lanPost := ionoscloud.LanPost{
 		Properties: &ionoscloud.LanPropertiesPost{
@@ -147,122 +92,85 @@ func (s *stepCreateServer) Run(ctx context.Context, state multistep.StateBag) mu
 			Name:   ionoscloud.PtrString(c.SnapshotName),
 		},
 	}
+
+	ui.Say("Creating LAN...")
 	// create lan
-	lan, lResp, err := s.client.LANsApi.DatacentersLansPost(ctx, *datacenter.Id).Lan(lanPost).Execute()
+	lan, err := s.createLanAndWaitUntilDone(ctx, dcId, lanPost)
 	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a LAN %s", err.Error()))
-		return multistep.ActionHalt
-	}
-	if lResp.StatusCode > 299 {
-		ui.Error(fmt.Sprintf("Error occurred %s", parseErrorMessage(lResp.Message)))
+		ui.Error(fmt.Sprintf("Error occurred while creating a server %s", err.Error()))
 		return multistep.ActionHalt
 	}
 
-	err = s.waitTillProvisioned(ctx, lResp.Header.Get("Location"), *c)
+	// string to int
+	lanId, err := strconv.Atoi(*lan.Id)
 	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a LAN %s", err.Error()))
+		ui.Error(fmt.Sprintf("Error occurred while creating a server %s", err.Error()))
 		return multistep.ActionHalt
 	}
+	nic.Properties.Lan = ionoscloud.PtrInt32(int32(lanId))
 
-	// attach lan to server
-	nic, nicRESP, err := s.client.LANsApi.DatacentersLansNicsPost(ctx, *datacenter.Id, *lan.Id).Nic(nic).Execute()
+	ui.Say("Creating Server...")
+	// create server
+	server, err := s.createServerAndWaitUntilDone(ctx, dcId, serverReq)
 	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while attaching a NIC %s", err.Error()))
-		return multistep.ActionHalt
-	}
-
-	if nicRESP.StatusCode > 299 {
-		ui.Error(fmt.Sprintf("Error occurred %s", parseErrorMessage(nicRESP.Message)))
-		return multistep.ActionHalt
-	}
-
-	err = s.waitTillProvisioned(ctx, nicRESP.Header.Get("Location"), *c)
-	if err != nil {
-		ui.Error(fmt.Sprintf("Error occurred while creating a NIC %s", err.Error()))
+		ui.Error(fmt.Sprintf("Error occurred while creating a server %s", err.Error()))
 		return multistep.ActionHalt
 	}
 
 	volumes := *server.Entities.Volumes.Items
-	state.Put("volume_id", volumes[0].Id)
+	state.Put("volume_id", *volumes[0].Id)
 
-	server, sResp, err = s.client.ServersApi.DatacentersServersFindById(ctx, *datacenter.Id, *server.Id).Execute()
+	server, err = s.findServerById(ctx, dcId, *server.Id)
 	if err != nil {
 		ui.Error(fmt.Sprintf("Error occurred while finding the server %s", err.Error()))
 		return multistep.ActionHalt
 	}
 
-	//server = profitbricks.GetServer(datacenter.Id, server.Id)
 	// instance_id is the generic term used so that users can have access to the
 	// instance id inside of the provisioners, used in step_provision.
-	state.Put("instance_id", server.Id)
+	state.Put("instance_id", *server.Id)
 
 	nics := *server.Entities.Nics.Items
 	ips := *nics[0].Properties.Ips
 	state.Put("server_ip", ips[0])
+	ui.Say("Server Created...")
 
 	return multistep.ActionContinue
 }
 
 func (s *stepCreateServer) Cleanup(state multistep.StateBag) {
-	c := state.Get("config").(*Config)
 	ui := state.Get("ui").(packersdk.Ui)
 
 	ui.Say("Removing Virtual Data Center...")
 
 	if dcId, ok := state.GetOk("datacenter_id"); ok {
-		resp, err := s.client.DataCentersApi.DatacentersDelete(context.TODO(), dcId.(string)).Execute()
+		deleted, err := s.deleteDatacenter(s.client, dcId.(string))
 		if err != nil {
 			ui.Error(fmt.Sprintf(
 				"Error deleting Virtual Data Center. Please destroy it manually: %s", err))
 		}
-		if err := s.checkForErrors(resp); err != nil {
-			ui.Error(fmt.Sprintf(
-				"Error deleting Virtual Data Center. Please destroy it manually: %s", err))
-		}
-		if err := s.waitTillProvisioned(context.TODO(), resp.Header.Get("Location"), *c); err != nil {
-			ui.Error(fmt.Sprintf(
-				"Error deleting Virtual Data Center. Please destroy it manually: %s", err))
+		if deleted {
+			ui.Say("Virtual Data Center deleted...")
 		}
 	}
 }
 
-func (s *stepCreateServer) waitTillProvisioned(ctx context.Context, path string, config Config) error {
-	waitCount := 120
-	if config.Retries > 0 {
-		waitCount = config.Retries
+func processRequestDatacenterDelete(apiClient *ionoscloud.APIClient, resourceID string) (*ionoscloud.APIResponse, error) {
+	apiRequest := apiClient.DataCentersApi.DatacentersFindById(context.Background(), resourceID)
+	_, apiResp, err := apiRequest.Execute()
+	if err != nil {
+		return apiResp, fmt.Errorf("error occurred when executing the api get resource operation: %w", err)
 	}
-	for i := 0; i < waitCount; i++ {
-		status, _, err := s.client.GetRequestStatus(ctx, path)
-		if err != nil {
-			return err
-		}
-		if *status.Metadata.Status == "DONE" {
-			return nil
-		}
-		if *status.Metadata.Status == "FAILED" {
-			return errors.New(*status.Metadata.Message)
-		}
-		time.Sleep(1 * time.Second)
-		i++
-	}
-	return nil
+
+	return apiResp, nil
 }
 
-func (s *stepCreateServer) checkForErrors(instance *ionoscloud.APIResponse) error {
-	if instance.StatusCode > 299 {
-		return fmt.Errorf("error occurred %s", instance.Message)
+func (s *stepCreateServer) deleteDatacenter(apiClient *ionoscloud.APIClient, datacenterID string) (bool, error) {
+	_, err := apiClient.DataCentersApi.DatacentersDelete(context.Background(), datacenterID).Execute()
+	if err != nil {
+		return false, fmt.Errorf("error occurred when executing the api get resource operation: %w", err)
 	}
-	return nil
-}
-
-type RestError struct {
-	HttpStatus int       `json:"httpStatus,omitempty"`
-	Messages   []Message `json:"messages,omitempty"`
-}
-
-type Message struct {
-	ErrorCode string `json:"errorCode,omitempty"`
-	Message   string `json:"message,omitempty"`
+	return apiClient.WaitForDeletion(context.Background(), processRequestDatacenterDelete, datacenterID)
 }
 
 func (s *stepCreateServer) getImageId(imageName string, c *Config) (string, error) {
@@ -291,50 +199,130 @@ func (s *stepCreateServer) getImageId(imageName string, c *Config) (string, erro
 	return "", nil
 }
 
-func (s *stepCreateServer) getImageAlias(ctx context.Context, imageAlias string, location string) (string, error) {
-	if imageAlias == "" {
-		return "", nil
-	}
+// createDcAndWaitUntilDone - creates datacenter and waits until provisioning is successful
+// return - datacenter object created, or error
+func (s *stepCreateServer) createDcAndWaitUntilDone(ctx context.Context, name, loc string) (*ionoscloud.Datacenter, error) {
 
-	locations, resp, err := s.client.LocationsApi.LocationsFindByRegionId(ctx, location).Execute()
+	//datacenterName := "testDatacenter"
+	description := "this is the packer datacenter"
+	//loc := "de/txl" // other location values: de/fra", "us/las", "us/ewr", "de/txl", gb/lhr", "es/vit"
+	dc, apiResponse, err := s.createDatacenter(ctx, name, description, loc)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf(
+			"error creating data center (%w)", err)
 	}
-	if resp.StatusCode > 299 {
-		return "", errors.New("error occurred while getting locations")
-	}
-
-	items := *locations.Items
-	for i := 0; i < len(items); i++ {
-		loc := items[i]
-		if len(*loc.Properties.ImageAliases) > 0 {
-			for _, i := range *loc.Properties.ImageAliases {
-				alias := ""
-				if i != "" {
-					alias = i
-				}
-				if alias != "" && strings.EqualFold(alias, imageAlias) {
-					return alias, nil
-				}
-			}
-		}
+	// gets the Location Header value, where Request ID is stored, to interrogate the request status
+	requestPath := getRequestPath(apiResponse)
+	if requestPath == "" {
+		return nil, fmt.Errorf("error getting location from header for datacenter")
 	}
 
-	return "", nil
+	// Waits for the datacenter creation to finish. Polls until it receives an answer that
+	// provisioning is successful
+	err = s.waitForRequestToBeDone(ctx, requestPath)
+	if err != nil {
+		return nil, fmt.Errorf("error while waiting for datacenter creation to finish (%w)", err)
+	}
+	return &dc, nil
 }
 
-func parseErrorMessage(raw string) (toreturn string) {
-	var tmp map[string]interface{}
-	if json.Unmarshal([]byte(raw), &tmp) != nil {
-		return ""
+func (s *stepCreateServer) createDatacenter(ctx context.Context, name, description, location string) (ionoscloud.Datacenter, *ionoscloud.APIResponse, error) {
+	// The required parameter for datacenter creation is: 'location'.
+	// Creates the datacenter structure and populates it
+	dc := ionoscloud.Datacenter{
+		Properties: &ionoscloud.DatacenterProperties{
+			Name:        &name,
+			Description: &description,
+			Location:    &location,
+		},
 	}
+	// The computeClient has access to all the resources in the ionos compute ecosystem. First we get the DatacenterApi.
+	// The datacenter is the basic building block in which to create your infrastructure.
+	// Builder pattern is used, to allow for easier creation and cleaner code.
+	// In this case, the order is DatacentersPost -> Datacenter (loads datacenter structure) -> Execute
+	// The final step that actually sends the request is 'execute'.
+	return s.client.DataCentersApi.DatacentersPost(ctx).Datacenter(dc).Execute()
+}
 
-	for _, v := range tmp["messages"].([]interface{}) {
-		for index, i := range v.(map[string]interface{}) {
-			if index == "message" {
-				toreturn = toreturn + i.(string) + "\n"
-			}
-		}
+// waitForRequestToBeDone - polls until the request is 'Done', or
+// until the context timeout expires
+func (s *stepCreateServer) waitForRequestToBeDone(ctx context.Context, path string) error {
+	// Polls until context timeout expires
+	_, err := s.client.WaitForRequest(ctx, path)
+	if err != nil {
+		return fmt.Errorf("error waiting for status for %s : (%w)", path, err)
 	}
-	return toreturn
+	log.Printf("resource created for path %s", path)
+	return nil
+}
+
+// createServerAndWaitUntilDone - creates server and waits until provisioning is successful
+// return - server object created, or error
+func (s *stepCreateServer) createServerAndWaitUntilDone(ctx context.Context, dcId string, server ionoscloud.Server) (*ionoscloud.Server, error) {
+	server, apiResponse, err := s.createServer(ctx, dcId, server)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error creating server (%w)", err)
+	}
+	// The initial response from the cloud is a HTTP/2.0 202 Accepted - after this response, the IONOS Cloud API
+	// starts to actually create the server
+	// Gets path to interrogate server creation status
+	requestPath := getRequestPath(apiResponse)
+	if requestPath == "" {
+		return nil, fmt.Errorf("error getting server path")
+	}
+	// Waits for the server creation to finish. It takes some time to create
+	// a compute resource, so we poll until provisioning is successful
+	err = s.waitForRequestToBeDone(ctx, requestPath)
+	if err != nil {
+		return nil, fmt.Errorf("error while waiting for server creation to finish (%w)", err)
+	}
+	return &server, nil
+}
+
+func (s *stepCreateServer) createServer(ctx context.Context, datacenterId string, server ionoscloud.Server) (ionoscloud.Server, *ionoscloud.APIResponse, error) {
+	return s.client.ServersApi.DatacentersServersPost(ctx, datacenterId).Server(server).Execute()
+}
+
+// createLanAndWaitUntilDone - creates LAN and waits until provisioning is successful
+// return - server object created, or error
+func (s *stepCreateServer) createLanAndWaitUntilDone(ctx context.Context, dcId string, lanPost ionoscloud.LanPost) (*ionoscloud.LanPost, error) {
+	lan, apiResponse, err := s.client.LANsApi.DatacentersLansPost(ctx, dcId).Lan(lanPost).Execute()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error creating LAN (%w)", err)
+	}
+	// The initial response from the cloud is a HTTP/2.0 202 Accepted - after this response, the IONOS Cloud API
+	// starts to actually create the server
+	// Gets path to interrogate server creation status
+	requestPath := getRequestPath(apiResponse)
+	if requestPath == "" {
+		return nil, fmt.Errorf("error getting LAN path")
+	}
+	// Waits for the server creation to finish. It takes some time to create
+	// a compute resource, so we poll until provisioning is successful
+	err = s.waitForRequestToBeDone(ctx, requestPath)
+	if err != nil {
+		return nil, fmt.Errorf("error while waiting for LAN creation to finish (%w)", err)
+	}
+	return &lan, nil
+}
+
+// findServerById - finds a server by id
+func (s *stepCreateServer) findServerById(ctx context.Context, dcId, serverID string) (*ionoscloud.Server, error) {
+	server, _, err := s.client.ServersApi.DatacentersServersFindById(ctx, dcId, serverID).Execute()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error attaching NIC (%w)", err)
+	}
+	return &server, nil
+}
+
+// getRequestPath - returns location header value which is the path
+// used to poll the request for readiness
+func getRequestPath(resp *ionoscloud.APIResponse) string {
+	if resp != nil {
+		return resp.Header.Get("location")
+	}
+	return ""
 }

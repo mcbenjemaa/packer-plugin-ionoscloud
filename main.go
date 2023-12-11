@@ -9,8 +9,8 @@ import (
 
 	"github.com/hashicorp/packer-plugin-sdk/plugin"
 
-	"github.com/hashicorp/packer-plugin-profitbricks/builder/ionoscloud"
-	"github.com/hashicorp/packer-plugin-profitbricks/version"
+	"github.com/hashicorp/packer-plugin-ionoscloud/builder/ionoscloud"
+	"github.com/hashicorp/packer-plugin-ionoscloud/version"
 )
 
 func main() {

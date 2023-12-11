@@ -1,4 +1,4 @@
-module github.com/hashicorp/packer-plugin-profitbricks
+module github.com/hashicorp/packer-plugin-ionoscloud
 
 go 1.21
 
@@ -9,6 +9,7 @@ require (
 	github.com/hashicorp/packer-plugin-sdk v0.5.2
 	github.com/ionos-cloud/sdk-go/v6 v6.1.10
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/pkg/errors v0.9.1
 	github.com/zclconf/go-cty v1.14.1
 	golang.org/x/crypto v0.16.0
 )

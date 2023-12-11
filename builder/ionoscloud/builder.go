@@ -5,7 +5,6 @@ package ionoscloud
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/hcl/v2/hcldec"
@@ -13,7 +12,6 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
-
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 )
 
@@ -49,7 +47,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 	steps := []multistep.Step{
 		&StepCreateSSHKey{
 			Debug:        b.config.PackerDebug,
-			DebugKeyPath: fmt.Sprintf("pb_%s", b.config.SnapshotName),
+			DebugKeyPath: fmt.Sprintf("ionos_%s", b.config.SnapshotName),
 		},
 		newStepCreateServer(client),
 		&communicator.StepConnect{
@@ -82,13 +80,9 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 
 func (b *Builder) newAPIClient(state multistep.StateBag) (*ionoscloud.APIClient, error) {
 	c := state.Get("config").(*Config)
-
 	cfg := ionoscloud.NewConfiguration(c.IonosUsername, c.IonosPassword, "", "")
-
 	cfg.SetDepth(5)
-	if c.Comm.SSHPublicKey == nil {
-		return nil, errors.New("no ssh private key set; ssh authentication won't be possible. Please specify your private key in the ssh_private_key_file configuration key")
-	}
+
 	// new apiclient for ionoscloud
 	return ionoscloud.NewAPIClient(cfg), nil
 }

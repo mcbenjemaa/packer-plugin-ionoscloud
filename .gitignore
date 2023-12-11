@@ -3,3 +3,5 @@ dist/*
 packer-plugin-ionoscloud
 crash.log
 .idea
+.env
+**ssh_private_key*
