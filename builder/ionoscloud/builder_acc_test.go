@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package profitbricks
+package ionoscloud
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ func TestBuilderAcc_basic(t *testing.T) {
 		Check: func(buildCommand *exec.Cmd, logfile string) error {
 			if buildCommand.ProcessState != nil {
 				if buildCommand.ProcessState.ExitCode() != 0 {
-					return fmt.Errorf("Bad exit code. Logfile: %s", logfile)
+					return fmt.Errorf("bad exit code. Logfile: %s", logfile)
 				}
 			}
 			return nil
@@ -31,12 +31,12 @@ func TestBuilderAcc_basic(t *testing.T) {
 }
 
 func testAccPreCheck() error {
-	if v := os.Getenv("PROFITBRICKS_USERNAME"); v == "" {
-		return fmt.Errorf("PROFITBRICKS_USERNAME must be set for acceptance tests")
+	if v := os.Getenv("IONOS_USERNAME"); v == "" {
+		return fmt.Errorf("IONOS_USERNAME must be set for acceptance tests")
 	}
 
-	if v := os.Getenv("PROFITBRICKS_PASSWORD"); v == "" {
-		return fmt.Errorf("PROFITBRICKS_PASSWORD must be set for acceptance tests")
+	if v := os.Getenv("IONOS_PASSWORD"); v == "" {
+		return fmt.Errorf("IONOS_PASSWORD must be set for acceptance tests")
 	}
 
 	return nil
@@ -46,11 +46,13 @@ func testAccPreCheck() error {
 const testBuilderAccBasic = `
 {
 	"builders": [{
-	      "image": "Ubuntu-16.04",
+	      "image": "Ubuntu-22.04",
 	      "password": "password",
 	      "username": "username",
 	      "snapshot_name": "packer",
-	      "type": "profitbricks"
+          "ssh_username": "root",
+          "ssh_password": "test1234",
+	      "type": "ionoscloud"
    	}]
 }
 `

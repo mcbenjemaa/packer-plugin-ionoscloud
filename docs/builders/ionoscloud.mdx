@@ -1,15 +1,15 @@
 ---
-description: The ProfitBricks builder is able to create images for ProfitBricks cloud.
-page_title: ProfitBricks - Builders
-nav_title: ProfitBricks
+description: The IONOSCloud builder is able to create images for IONOS cloud.
+page_title: IONOSCloud - Builders
+nav_title: IONOSCloud
 ---
 
-# ProfitBricks Builder
+# IONOSCloud Builder
 
-Type: `profitbricks`
-Artifact BuilderId: `packer.profitbricks`
+Type: `ionoscloud`
+Artifact BuilderId: `packer.ionoscloud`
 
-The ProfitBricks Builder is able to create virtual machines for
+The IONOSCloud Builder is able to create virtual machines for
 [IONOS Compute Engine](https://cloud.ionos.com/compute).
 
 ## Configuration Reference
@@ -27,17 +27,21 @@ can also be supplied to override the typical auto-generated key:
 
 ### Required
 
-- `image` (string) - ProfitBricks volume image. Only Linux public images are
+- `image` (string) - IONOSCloud volume image. Only Linux public images are
   supported. To obtain full list of available images you can use
-  [ProfitBricks CLI](https://github.com/profitbricks/profitbricks-cli#image).
+  [ionos CLI](https://github.com/ionos-cloud/ionosctl/blob/master/docs/subcommands/Compute%20Engine/image/list.md#imagelist).
 
-- `password` (string) - ProfitBricks password. This can be specified via
-  environment variable `PROFITBRICKS_PASSWORD`, if provided. The value
+- `password` (string) - IONOS password. This can be specified via
+  environment variable `IONOS_PASSWORD`, if provided. The value
   defined in the config has precedence over environemnt variable.
 
-- `username` (string) - ProfitBricks username. This can be specified via
-  environment variable `PROFITBRICKS_USERNAME`, if provided. The value
+- `username` (string) - IONOS username. This can be specified via
+  environment variable `IONOS_USERNAME`, if provided. The value
   defined in the config has precedence over environemnt variable.
+
+- `ssh_username` (string) - SSH username to use to connect to the instance, *must use `root`*.
+
+- `ssh_private_key_file` (string) - Path to the SSH private key file to use to connect to the instance, *required for ssh*.
 
 ### Optional
 
@@ -61,9 +65,12 @@ can also be supplied to override the typical auto-generated key:
   generate it
 
 - `snapshot_password` (string) - Password for the snapshot.
+
+- `ssh_timeout` (string) - SSH timeout. Defaults to "10m".
+
 <!-- markdown-link-check-disable -->
-- `url` (string) - Endpoint for the ProfitBricks REST API. Default URL
-"<https://api.profitbricks.com/rest/v2>"
+- `url` (string) - Endpoint for the IONOS Cloud REST API. Default URL
+"<https://api.ionos.com>"
 <!-- markdown-link-check-enable -->
 
 ## Example
@@ -73,17 +80,18 @@ Here is a basic example:
 **HCL**
 
 ```hcl
-source "profitbricks" "ubuntu" {
-  image             = "Ubuntu-16.04"
-  disk_size         = 5
-  snapshot_name     = "double"
-  snapshot_password = "test1234"
-  ssh_username      = "root"
-  timeout           = 100
+source "ionoscloud" "ubuntu" {
+  image                 = "Ubuntu-22.04"
+  disk_size             = 5
+  snapshot_name         = "test-snapshot"
+  ssh_username          = "root"
+  ssh_password          = "test1234"
+  ssh_timeout          = "15m"
+  ssh_private_key_file  = "~/.ssh/id_rsa"
 }
 
 build {
-  sources = "profitbricks.ubuntu"
+  sources = "ionoscloud.ubuntu"
 }
 ```
 
@@ -93,13 +101,17 @@ build {
 {
   "builders": [
     {
-      "image": "Ubuntu-16.04",
-      "type": "profitbricks",
+      "communicator": "ssh",
+      "name": "ubuntu",
+      "snapshot_name": "ubuntu-k8s",
+      "image": "Ubuntu-22.04",
+      "location": "de/txl",
       "disk_size": "5",
-      "snapshot_name": "double",
-      "snapshot_password": "test1234",
       "ssh_username": "root",
-      "timeout": 100
+      "ssh_password": "builder0",
+      "ssh_timeout": "5m",
+      "ssh_private_key_file": "~/.ssh/id_ed25519",
+      "type": "ionoscloud"
     }
   ]
 }

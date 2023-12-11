@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package profitbricks
+package ionoscloud
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ func testConfig() map[string]interface{} {
 		"password":      "password",
 		"username":      "username",
 		"snapshot_name": "packer",
-		"type":          "profitbricks",
+		"type":          "ionoscloud",
 	}
 }
 

@@ -39,6 +39,7 @@ can also be supplied to override the typical auto-generated key:
 - `ssh_private_key_file` (string) - Path to the SSH private key file to use to connect to the instance, *required for ssh*.
 
 ### Optional
+
 - `cores` (number) - Amount of CPU cores to use for this build. Defaults to
   "4".
 
@@ -64,7 +65,7 @@ can also be supplied to override the typical auto-generated key:
 
 <!-- markdown-link-check-disable -->
 - `url` (string) - Endpoint for the IONOS Cloud REST API. Default URL
-  "<https://api.ionos.com>"
+"<https://api.ionos.com>"
 <!-- markdown-link-check-enable -->
 
 ## Example

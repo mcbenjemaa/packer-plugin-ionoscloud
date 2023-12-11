@@ -1,4 +1,7 @@
 main
 dist/*
-packer-plugin-profitbricks
+packer-plugin-ionoscloud
 crash.log
+.idea
+.env
+**ssh_private_key*

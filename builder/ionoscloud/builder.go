@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package profitbricks
+package ionoscloud
 
 import (
 	"context"
@@ -12,9 +12,10 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
+	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 )
 
-const BuilderId = "packer.profitbricks"
+const BuilderId = "packer.ionoscloud"
 
 type Builder struct {
 	config Config
@@ -38,12 +39,17 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 	state.Put("config", &b.config)
 	state.Put("hook", hook)
 	state.Put("ui", ui)
+
+	client, err := b.newAPIClient(state)
+	if err != nil {
+		return nil, err
+	}
 	steps := []multistep.Step{
 		&StepCreateSSHKey{
 			Debug:        b.config.PackerDebug,
-			DebugKeyPath: fmt.Sprintf("pb_%s", b.config.SnapshotName),
+			DebugKeyPath: fmt.Sprintf("ionos_%s", b.config.SnapshotName),
 		},
-		new(stepCreateServer),
+		newStepCreateServer(client),
 		&communicator.StepConnect{
 			Config:    &b.config.Comm,
 			Host:      communicator.CommHost(b.config.Comm.Host(), "server_ip"),
@@ -53,7 +59,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 		&commonsteps.StepCleanupTempKeys{
 			Comm: &b.config.Comm,
 		},
-		new(stepTakeSnapshot),
+		newStepTakeSnapshot(client),
 	}
 
 	config := state.Get("config").(*Config)
@@ -70,4 +76,13 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 		StateData:    map[string]interface{}{"generated_data": state.Get("generated_data")},
 	}
 	return artifact, nil
+}
+
+func (b *Builder) newAPIClient(state multistep.StateBag) (*ionoscloud.APIClient, error) {
+	c := state.Get("config").(*Config)
+	cfg := ionoscloud.NewConfiguration(c.IonosUsername, c.IonosPassword, "", "")
+	cfg.SetDepth(5)
+
+	// new apiclient for ionoscloud
+	return ionoscloud.NewAPIClient(cfg), nil
 }
