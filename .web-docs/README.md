@@ -1,4 +1,4 @@
-The ionoscloud plugin allows you to create custom images on the IONOS Compute Engine platform.
+The IONOS Cloud plugin allows you to create custom images on the IONOS Compute Engine platform.
 
 ## Installation
 

@@ -67,16 +67,16 @@ type FlatConfig struct {
 	WinRMUseSSL               *bool             `mapstructure:"winrm_use_ssl" cty:"winrm_use_ssl" hcl:"winrm_use_ssl"`
 	WinRMInsecure             *bool             `mapstructure:"winrm_insecure" cty:"winrm_insecure" hcl:"winrm_insecure"`
 	WinRMUseNTLM              *bool             `mapstructure:"winrm_use_ntlm" cty:"winrm_use_ntlm" hcl:"winrm_use_ntlm"`
-	PBUsername                *string           `mapstructure:"username" cty:"username" hcl:"username"`
-	PBPassword                *string           `mapstructure:"password" cty:"password" hcl:"password"`
-	PBUrl                     *string           `mapstructure:"url" cty:"url" hcl:"url"`
+	IonosUsername             *string           `mapstructure:"username" cty:"username" hcl:"username"`
+	IonosPassword             *string           `mapstructure:"password" cty:"password" hcl:"password"`
+	IonosApiUrl               *string           `mapstructure:"url" cty:"url" hcl:"url"`
 	Region                    *string           `mapstructure:"location" cty:"location" hcl:"location"`
 	Image                     *string           `mapstructure:"image" cty:"image" hcl:"image"`
 	SnapshotName              *string           `mapstructure:"snapshot_name" cty:"snapshot_name" hcl:"snapshot_name"`
-	DiskSize                  *int              `mapstructure:"disk_size" cty:"disk_size" hcl:"disk_size"`
+	DiskSize                  *float32          `mapstructure:"disk_size" cty:"disk_size" hcl:"disk_size"`
 	DiskType                  *string           `mapstructure:"disk_type" cty:"disk_type" hcl:"disk_type"`
-	Cores                     *int              `mapstructure:"cores" cty:"cores" hcl:"cores"`
-	Ram                       *int              `mapstructure:"ram" cty:"ram" hcl:"ram"`
+	Cores                     *int32            `mapstructure:"cores" cty:"cores" hcl:"cores"`
+	Ram                       *int32            `mapstructure:"ram" cty:"ram" hcl:"ram"`
 	Retries                   *int              `mapstructure:"retries" cty:"retries" hcl:"retries"`
 }
 
